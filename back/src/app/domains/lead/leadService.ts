@@ -251,30 +251,15 @@ class LeadService {
   
   public async list (_params) {
     try{
-      const where:any = {}
-      
-      let third
-      
-      if(_params.user){
-        third = await Third.findOne({user: _params.user}).lean()
-        if(third) where.adviser = third._id.toString()
-      }
-      
-      
-      let leads = await Lead.find(where)
+      const leads = await Lead.find({})
       .sort({created_at:-1})
       .populate({
-        path: 'contact',
-        select: 'first_name last_name document number',
+        path: 'interestProgram',
+        select: 'name',
         options: { lean:true }
       })
       .limit(100)
       .lean()
-      
-      leads = leads.map(_l=>{
-        _l.full_name = `${_l.contact?.first_name} ${_l.contact?.last_name}`.trim()
-        return _l
-      })
       
       return responseUtility.success({
         list:leads
@@ -298,8 +283,8 @@ class LeadService {
     try{
       const lead = await Lead.findOne({_id: _params._id})
       .populate({
-        path: 'contact',
-        select: 'first_name last_name incremental document number',
+        path: 'interestProgram',
+        select: 'name',
         options: { lean:true }
       })
       .lean()
