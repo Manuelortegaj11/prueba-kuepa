@@ -1,9 +1,10 @@
 // @import_dependencies
+import mongoose from 'mongoose'
 
 // @import_services
 
 // @import_models
-import { Lead, Campaign, Third, Adnetwork, Tracking, Message, Interaction } from "@app/models"
+import { Lead, Campaign, Third, Adnetwork, Tracking, Message, Interaction, Program } from "@app/models"
 
 // @import_utilities
 import { responseUtility } from "@core/utilities/responseUtility"
@@ -11,6 +12,8 @@ import moment from "moment";
 
 // @import_types
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MOBILE_PHONE_PATTERN = /^3\d{9}$/
 
 class LeadService {
   
@@ -19,41 +22,39 @@ class LeadService {
   
   public async upsert (_params) {
     try{ 
-      if(_params.user){
-        const third = await Third.findOne({user: _params.user}).lean()
-        if(!third) return responseUtility.error('third.not_found1');
-        _params.adviser = third._id
+      if(_params._id && !mongoose.isObjectIdOrHexString(_params._id)) return responseUtility.error('lead.not_found')
+      
+      const lead_data = {
+        first_name: this.cleanText(_params.first_name),
+        last_name: this.cleanText(_params.last_name),
+        email: this.cleanText(_params.email).toLowerCase(),
+        mobile_phone: this.cleanText(_params.mobile_phone),
+        interestProgram: _params.interestProgram
       }
       
-      if(_params.third){
-        const third = await Third.findOne({_id: _params.third}).lean()
-        if(!third) return responseUtility.error('third.not_found2');
-        _params.adviser = third._id
-      }
+      const fields = this.invalidFields(lead_data)
+      if(fields.length) return responseUtility.error('lead.invalid_data', null, { fields })
       
-      let last_tracking = _params?.trackings?.[_params?.trackings?.length - 1]
-      if(last_tracking?.new){
-        const tracking = await Tracking.findOne({_id: last_tracking.tracking}).lean()
-        if(tracking?.target_status){
-          _params.status = tracking.target_status
-        }
-        if(!last_tracking.has_next_date && _params.status !== 'sold'){
-          _params.status = 'dropped'
-        }
-      }
+      const program = await Program.findOne({_id: lead_data.interestProgram}).lean()
+      if(!program) return responseUtility.error('program.not_found')
+      
+      const where:any = { email: lead_data.email }
+      if(_params._id) where._id = { $ne: _params._id }
+      const duplicated = await Lead.findOne(where).lean()
+      if(duplicated) return responseUtility.error('lead.duplicated_email')
       
       if(_params._id){
         const exists = await Lead.findOne({_id: _params._id}).lean()
         if(!exists) return responseUtility.error('lead.not_found');
         
-        const lead = await Lead.findOneAndUpdate({_id: _params._id}, {$set: _params}, {new:true, lean:true})
+        const lead = await Lead.findOneAndUpdate({_id: _params._id}, {$set: lead_data}, {new:true, lean:true})
         
         
         return responseUtility.success({
           object: lead
         })
       } else {
-        const create = await Lead.create(_params)
+        const create = await Lead.create(lead_data)
         const lead = create.toObject()
         
         
@@ -306,6 +307,20 @@ class LeadService {
     } catch (error) {
       console.log('error', error)
     }
+  }
+  
+  private invalidFields (lead_data) {
+    const fields: string[] = []
+    if(!lead_data.first_name) fields.push('first_name')
+    if(!lead_data.last_name) fields.push('last_name')
+    if(!EMAIL_PATTERN.test(lead_data.email)) fields.push('email')
+    if(!MOBILE_PHONE_PATTERN.test(lead_data.mobile_phone)) fields.push('mobile_phone')
+    if(!mongoose.isObjectIdOrHexString(lead_data.interestProgram)) fields.push('interestProgram')
+    return fields
+  }
+  
+  private cleanText (value) {
+    return typeof value === 'string' ? value.trim() : ''
   }
 }
 
