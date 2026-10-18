@@ -5,6 +5,7 @@ import mongoose from 'mongoose'
 
 // @import_models
 import { Lead, Campaign, Third, Adnetwork, Tracking, Message, Interaction, Program } from "@app/models"
+import { INCREMENTAL_RANGE } from "@app/models/leadModel"
 
 // @import_utilities
 import { responseUtility } from "@core/utilities/responseUtility"
@@ -14,6 +15,7 @@ import moment from "moment";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MOBILE_PHONE_PATTERN = /^3\d{9}$/
+const INCREMENTAL_ATTEMPTS = 5
 
 class LeadService {
   
@@ -24,9 +26,13 @@ class LeadService {
     try{ 
       if(_params._id && !mongoose.isObjectIdOrHexString(_params._id)) return responseUtility.error('lead.not_found')
       
+      const first_name = this.cleanText(_params.first_name)
+      const last_name = this.cleanText(_params.last_name)
+      
       const lead_data = {
-        first_name: this.cleanText(_params.first_name),
-        last_name: this.cleanText(_params.last_name),
+        first_name,
+        last_name,
+        full_name: `${first_name} ${last_name}`,
         email: this.cleanText(_params.email).toLowerCase(),
         mobile_phone: this.cleanText(_params.mobile_phone),
         interestProgram: _params.interestProgram
@@ -54,8 +60,8 @@ class LeadService {
           object: lead
         })
       } else {
-        const create = await Lead.create(lead_data)
-        const lead = create.toObject()
+        const lead = await this.createWithIncremental(lead_data)
+        if(!lead) return responseUtility.error('lead.incremental_exhausted')
         
         
         return responseUtility.success({
@@ -321,6 +327,28 @@ class LeadService {
   
   private cleanText (value) {
     return typeof value === 'string' ? value.trim() : ''
+  }
+  
+  private async createWithIncremental (lead_data, attempt = 1) {
+    const incremental = await this.nextIncremental()
+    if(incremental > INCREMENTAL_RANGE.max) return null
+    
+    try{
+      const lead = await Lead.create({...lead_data, incremental})
+      return lead.toObject()
+    } catch (error) {
+      const incremental_taken = error?.code === 11000 && error?.keyPattern?.incremental
+      if(!incremental_taken || attempt >= INCREMENTAL_ATTEMPTS) throw error
+      return this.createWithIncremental(lead_data, attempt + 1)
+    }
+  }
+  
+  private async nextIncremental () {
+    const last = await Lead.findOneWithDeleted({})
+    .sort({incremental:-1})
+    .select('incremental')
+    .lean()
+    return last ? last.incremental + 1 : INCREMENTAL_RANGE.min
   }
 }
 

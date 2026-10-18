@@ -16,14 +16,16 @@ export interface ILead {
   trackings: { tracking: mongoose.Types.ObjectId, description: string }[];
 }
 
+export const INCREMENTAL_RANGE = { min: 1000, max: 9999 }
+
 const LeadSchema = new Schema({
   incremental:{
     //numero unico de 4 digitos 
     type: Schema.Types.Number,
     required: true,
     unique: true,
-    min: 1000,
-    max: 9999
+    min: INCREMENTAL_RANGE.min,
+    max: INCREMENTAL_RANGE.max
   },
   full_name: {type: Schema.Types.String},
   first_name: {type: Schema.Types.String, required: true, trim: true},
