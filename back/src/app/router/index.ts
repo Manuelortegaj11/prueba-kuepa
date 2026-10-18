@@ -2,6 +2,7 @@
 import { Application } from 'express'
 
 // @import_routes
+import { ProgramRoute } from '@app/domains/program/programRoute'
 import { RoleRoute } from '@app/domains/role/roleRoute'
 import { PermissionRoute } from '@app/domains/permission/permissionRoute'
 import { GlobalRoute } from '@app/domains/global/globalRoute'
@@ -15,6 +16,7 @@ class Routes {
   private prefix: string = '/api'
   
   // @declare_routes
+  private programRoute: ProgramRoute
   
   private roleRoute: RoleRoute
   private permissionRoute: PermissionRoute
@@ -26,6 +28,7 @@ class Routes {
   constructor(app: Application) {
     this.app = app
     // @assign_routes
+    this.programRoute = new ProgramRoute(this.app, this.prefix)
     this.roleRoute = new RoleRoute(this.app, this.prefix)
     this.permissionRoute = new PermissionRoute(this.app, this.prefix)
     this.thirdRoute = new ThirdRoute(this.app, this.prefix)
@@ -38,6 +41,7 @@ class Routes {
   public init() {
     try{
       // @init_routes
+      this.programRoute.init()
       this.roleRoute.init()
       this.permissionRoute.init()
       this.thirdRoute.init()
