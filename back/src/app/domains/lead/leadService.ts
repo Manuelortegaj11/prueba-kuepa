@@ -9,6 +9,7 @@ import { INCREMENTAL_RANGE } from "@app/models/leadModel"
 
 // @import_utilities
 import { responseUtility } from "@core/utilities/responseUtility"
+import { paginationUtility } from "@core/utilities/paginationUtility"
 import moment from "moment";
 
 // @import_types
@@ -16,6 +17,7 @@ import moment from "moment";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MOBILE_PHONE_PATTERN = /^3\d{9}$/
 const INCREMENTAL_ATTEMPTS = 5
+const ACCENT_GROUPS = ['aá', 'eé', 'ií', 'oó', 'uúü', 'nñ']
 
 class LeadService {
   
@@ -258,18 +260,27 @@ class LeadService {
   
   public async list (_params) {
     try{
-      const leads = await Lead.find({})
-      .sort({created_at:-1})
-      .populate({
-        path: 'interestProgram',
-        select: 'name',
-        options: { lean:true }
-      })
-      .limit(100)
-      .lean()
+      const pagination = paginationUtility.parse(_params)
+      if(pagination.fields.length) return responseUtility.error('pagination.invalid_params', null, { fields: pagination.fields })
+      
+      const where = this.searchFilter(_params.search)
+      const [leads, total] = await Promise.all([
+        Lead.find(where)
+        .sort({created_at:-1, _id:-1})
+        .skip(pagination.skip)
+        .limit(pagination.pageSize)
+        .populate({
+          path: 'interestProgram',
+          select: 'name',
+          options: { lean:true }
+        })
+        .lean(),
+        Lead.countDocuments(where)
+      ])
       
       return responseUtility.success({
-        list:leads
+        list: leads,
+        pagination: paginationUtility.meta(pagination.page, pagination.pageSize, total)
       })
     } catch (error) {
       console.log('error', error)
@@ -349,6 +360,25 @@ class LeadService {
     .select('incremental')
     .lean()
     return last ? last.incremental + 1 : INCREMENTAL_RANGE.min
+  }
+  
+  private searchFilter (search) {
+    const term = this.cleanText(search)
+    if(!term) return {}
+    
+    const pattern = this.searchPattern(term)
+    const filters: any[] = [{full_name: pattern}, {email: pattern}, {mobile_phone: pattern}]
+    if(/^\d+$/.test(term)) filters.push({incremental: Number(term)})
+    return { $or: filters }
+  }
+  
+  private searchPattern (term: string) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const accent_insensitive = ACCENT_GROUPS.reduce(
+      (pattern, group) => pattern.replace(new RegExp(`[${group}]`, 'gi'), `[${group}]`),
+      escaped
+    )
+    return new RegExp(accent_insensitive, 'i')
   }
 }
 

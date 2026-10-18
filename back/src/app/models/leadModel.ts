@@ -54,5 +54,7 @@ LeadSchema.plugin(mongoose_delete, {
   indexFields: 'all' 
 }) 
 
+LeadSchema.index({created_at: -1, _id: -1})
+
 
 export const LeadModel = mongoose.model<ILead, any>('Lead', LeadSchema) 

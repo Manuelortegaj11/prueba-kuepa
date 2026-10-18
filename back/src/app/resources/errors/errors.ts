@@ -7,5 +7,8 @@ export const errors = {
   },
   program: {
     not_found: { code: 404 }
+  },
+  pagination: {
+    invalid_params: { code: 400 }
   }
 }
