@@ -25,13 +25,22 @@ export interface LeadListParams {
   search?: string
 }
 
+export interface PaginationMeta {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  hasNext: boolean
+  hasPrev: boolean
+}
+
 export const leadService = {
   api,
   get: async({_id}:{_id:string}) =>{
     return await get({api: `${api}/get/${_id}`})
   },
-  list: async(params: LeadListParams = {}) =>{
-    return await get({api, options: {params}})
+  list: async(params: LeadListParams = {}, signal?: AbortSignal) =>{
+    return await get({api, options: {params, signal}})
   },
   upsert: async(lead: LeadInput) =>{
     return await post({api: `${api}/upsert`, options: {data: {...lead}}})

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react"
+import { TbChevronLeft, TbChevronRight, TbSearch } from "react-icons/tb"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { Lead, leadService } from "@/services/leadService"
+import { Lead, leadService, PaginationMeta } from "@/services/leadService"
 import { formatDateTime, formatPhone } from "@/util/utils"
 
 export interface RecentLeadsProps {
@@ -12,6 +15,7 @@ export interface RecentLeadsProps {
 }
 
 const PAGE_SIZE = 10
+const SEARCH_DELAY = 300
 const SKELETON_ROWS = 5
 const COLUMN_COUNT = 5
 
@@ -22,22 +26,59 @@ const COLUMN_VISIBILITY = {
 }
 
 export default function RecentLeads ({ lastCreatedId }: RecentLeadsProps) {
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState({ search: '', page: 1 })
   const [leads, setLeads] = useState<Lead[]>(null)
+  const [pagination, setPagination] = useState<PaginationMeta>(null)
+  const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
 
-  const loadLeads = async () => {
+  const loadLeads = async (signal?: AbortSignal) => {
+    setLoading(true)
     setFailed(false)
-    const response = await leadService.list({ page: 1, pageSize: PAGE_SIZE })
+    const response = await leadService.list({ page: filters.page, pageSize: PAGE_SIZE, search: filters.search || undefined }, signal)
+    if(signal?.aborted) return
     if(response?.code === 200){
       setLeads(response.list)
+      setPagination(response.pagination)
     } else {
       setFailed(true)
     }
+    setLoading(false)
+  }
+
+  const clearSearch = () => {
+    setQuery('')
+    setFilters({ search: '', page: 1 })
+  }
+
+  const goToPage = (page: number) => {
+    setFilters((current) => current.page === page ? current : { ...current, page })
   }
 
   useEffect(() => {
-    loadLeads()
+    const controller = new AbortController()
+    loadLeads(controller.signal)
+    return () => controller.abort()
+  }, [filters])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      const search = query.trim()
+      setFilters((current) => current.search === search ? current : { search, page: 1 })
+    }, SEARCH_DELAY)
+    return () => clearTimeout(timeout)
+  }, [query])
+
+  useEffect(() => {
+    if(lastCreatedId) clearSearch()
   }, [lastCreatedId])
+
+  const summary = () => {
+    if(!pagination) return 'Del más reciente al más antiguo.'
+    const total = `${pagination.total} ${pagination.total === 1 ? 'lead' : 'leads'}`
+    return filters.search ? `${total} para “${filters.search}”.` : `${total} en total, del más reciente al más antiguo.`
+  }
 
   const renderRows = () => {
     if(failed){
@@ -45,7 +86,7 @@ export default function RecentLeads ({ lastCreatedId }: RecentLeadsProps) {
         <TableRow>
           <TableCell colSpan={COLUMN_COUNT} className="py-8 text-center text-muted-foreground">
             No se pudieron cargar los leads.
-            <Button variant="link" className="h-auto p-0 pl-1 text-purple-800" onClick={loadLeads}>Reintentar</Button>
+            <Button variant="link" className="h-auto p-0 pl-1 text-purple-800" onClick={() => loadLeads()}>Reintentar</Button>
           </TableCell>
         </TableRow>
       )
@@ -67,7 +108,14 @@ export default function RecentLeads ({ lastCreatedId }: RecentLeadsProps) {
       return (
         <TableRow>
           <TableCell colSpan={COLUMN_COUNT} className="py-8 text-center text-muted-foreground">
-            Aún no hay leads registrados. Los que registres aparecerán aquí.
+            {
+              filters.search ?
+                <>
+                  No hay leads que coincidan con “{filters.search}”.
+                  <Button variant="link" className="h-auto p-0 pl-1 text-purple-800" onClick={clearSearch}>Limpiar búsqueda</Button>
+                </>
+              : 'Aún no hay leads registrados. Los que registres aparecerán aquí.'
+            }
           </TableCell>
         </TableRow>
       )
@@ -90,11 +138,22 @@ export default function RecentLeads ({ lastCreatedId }: RecentLeadsProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg text-purple-800">Últimos leads registrados</CardTitle>
-        <CardDescription>Los {PAGE_SIZE} más recientes, del más nuevo al más antiguo.</CardDescription>
+        <CardTitle className="text-lg text-purple-800">Leads registrados</CardTitle>
+        <CardDescription>{summary()}</CardDescription>
       </CardHeader>
-      <CardContent className="p-4 pt-0">
-        <Table aria-label="Últimos leads registrados" aria-busy={!leads && !failed}>
+      <CardContent className="flex flex-col gap-4 p-4 pt-0">
+        <div className="relative md:max-w-sm">
+          <TbSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={query}
+            placeholder="Buscar por nombre, correo, celular o N.º"
+            aria-label="Buscar leads"
+            className="pl-9"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+        <Table aria-label="Leads registrados" aria-busy={loading}>
           <TableHeader>
             <TableRow>
               <TableHead>N.º</TableHead>
@@ -104,10 +163,31 @@ export default function RecentLeads ({ lastCreatedId }: RecentLeadsProps) {
               <TableHead className={COLUMN_VISIBILITY.date}>Registro</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className={cn("transition-opacity", loading && leads && "opacity-60")}>
             {renderRows()}
           </TableBody>
         </Table>
+        {
+          pagination?.totalPages > 1 ?
+            <Pagination aria-label="Paginación de leads" className="items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">Página {pagination.page} de {pagination.totalPages}</p>
+              <PaginationContent>
+                <PaginationItem>
+                  <Button variant="outline" size="sm" className="border-slate-200" disabled={!pagination.hasPrev} onClick={() => goToPage(pagination.page - 1)}>
+                    <TbChevronLeft />
+                    Anterior
+                  </Button>
+                </PaginationItem>
+                <PaginationItem>
+                  <Button variant="outline" size="sm" className="border-slate-200" disabled={!pagination.hasNext} onClick={() => goToPage(pagination.page + 1)}>
+                    Siguiente
+                    <TbChevronRight />
+                  </Button>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          : null
+        }
       </CardContent>
     </Card>
   )
