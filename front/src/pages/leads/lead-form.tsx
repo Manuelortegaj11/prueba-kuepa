@@ -1,11 +1,13 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from "react"
+import { TbLoader2 } from "react-icons/tb"
+import { toast } from "@/components/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
-import { LeadInput } from "@/services/leadService"
+import { LeadInput, leadService } from "@/services/leadService"
 import { programService } from "@/services/programService"
 import { LEAD_FIELDS, LeadErrors, normalizeMobilePhone, validateField, validateLead } from "./lead-validation"
 
@@ -32,6 +34,11 @@ const EMPTY_LEAD: LeadInput = {
 
 const INVALID_CLASS = "border-red-500 focus:ring-red-500 focus-visible:ring-red-500"
 
+const SERVER_FIELD_ERRORS: Record<string, { field: keyof LeadInput, message: string }> = {
+  'lead.duplicated_email': { field: 'email', message: 'Ya hay un lead registrado con este correo.' },
+  'program.not_found': { field: 'interestProgram', message: 'Este programa ya no está disponible. Elige otro.' }
+}
+
 function Field ({ id, label, error, className, children }: FieldProps) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
@@ -51,6 +58,7 @@ export default function LeadForm () {
   const [errors, setErrors] = useState<LeadErrors>({})
   const [programs, setPrograms] = useState<Program[]>([])
   const [programsStatus, setProgramsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [submitting, setSubmitting] = useState(false)
 
   const loadPrograms = async () => {
     setProgramsStatus('loading')
@@ -77,12 +85,65 @@ export default function LeadForm () {
     if(lead[field].trim()) setErrors((current) => ({ ...current, [field]: validateField(field, lead[field]) }))
   }
 
-  const handleSubmit = (event: FormEvent) => {
-    event.preventDefault()
-    const foundErrors = validateLead(lead)
-    setErrors(foundErrors)
+  const focusFirstError = (foundErrors: LeadErrors) => {
     const invalidField = LEAD_FIELDS.find((field) => foundErrors[field])
     if(invalidField) document.getElementById(invalidField)?.focus()
+    return Boolean(invalidField)
+  }
+
+  const handleCreated = (created) => {
+    const program = programs.find((item) => item._id === created.interestProgram)
+    toast({
+      title: `Lead #${created.incremental} registrado`,
+      description: [created.full_name, program?.name].filter(Boolean).join(' · ')
+    })
+    setLead(EMPTY_LEAD)
+    setErrors({})
+    document.getElementById('first_name')?.focus()
+  }
+
+  const handleServerError = (response) => {
+    const fieldError = SERVER_FIELD_ERRORS[response?.message]
+    if(fieldError){
+      setErrors((current) => ({ ...current, [fieldError.field]: fieldError.message }))
+      document.getElementById(fieldError.field)?.focus()
+      return
+    }
+
+    if(response?.message === 'lead.invalid_data'){
+      const serverErrors: LeadErrors = {}
+      response.fields?.forEach((field: keyof LeadInput) => {
+        serverErrors[field] = validateField(field, lead[field]) || 'Revisa este dato.'
+      })
+      setErrors(serverErrors)
+      focusFirstError(serverErrors)
+      return
+    }
+
+    toast({
+      variant: 'destructive',
+      title: 'No se pudo registrar el lead',
+      description: 'Ocurrió un problema al guardar. Intenta de nuevo en unos segundos.'
+    })
+  }
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    if(submitting) return
+
+    const foundErrors = validateLead(lead)
+    setErrors(foundErrors)
+    if(focusFirstError(foundErrors)) return
+
+    setSubmitting(true)
+    const response = await leadService.upsert(lead)
+    setSubmitting(false)
+
+    if(response?.code === 200){
+      handleCreated(response.object)
+    } else {
+      handleServerError(response)
+    }
   }
 
   const errorProps = (field: keyof LeadInput) => ({
@@ -179,7 +240,10 @@ export default function LeadForm () {
             </Field>
           </div>
           <div className="flex justify-end">
-            <Button type="submit" tone="purple" className="w-full sm:w-auto">Registrar lead</Button>
+            <Button type="submit" tone="purple" disabled={submitting} className="w-full sm:w-auto">
+              {submitting ? <TbLoader2 className="animate-spin" /> : null}
+              {submitting ? 'Registrando...' : 'Registrar lead'}
+            </Button>
           </div>
         </form>
       </CardContent>
