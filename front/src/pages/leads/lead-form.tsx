@@ -24,6 +24,10 @@ interface FieldProps {
   children: ReactNode
 }
 
+export interface LeadFormProps {
+  onCreated?: (leadId: string) => void
+}
+
 const EMPTY_LEAD: LeadInput = {
   first_name: '',
   last_name: '',
@@ -53,7 +57,7 @@ function Field ({ id, label, error, className, children }: FieldProps) {
   )
 }
 
-export default function LeadForm () {
+export default function LeadForm ({ onCreated }: LeadFormProps) {
   const [lead, setLead] = useState<LeadInput>(EMPTY_LEAD)
   const [errors, setErrors] = useState<LeadErrors>({})
   const [programs, setPrograms] = useState<Program[]>([])
@@ -100,6 +104,7 @@ export default function LeadForm () {
     setLead(EMPTY_LEAD)
     setErrors({})
     document.getElementById('first_name')?.focus()
+    onCreated?.(created._id)
   }
 
   const handleServerError = (response) => {
