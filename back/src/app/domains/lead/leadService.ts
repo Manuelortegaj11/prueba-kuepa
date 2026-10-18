@@ -296,7 +296,7 @@ class LeadService {
         select: 'inbound from to content created_at',
         options: { lean:true }
       })
-      .sort({crated_at:-1})
+      .sort({created_at:-1})
       .lean()
       return responseUtility.success({
         lead,
