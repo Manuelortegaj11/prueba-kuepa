@@ -6,20 +6,31 @@ const { Schema } = mongoose
 
 export interface ILead {
   incremental: number;
-  number: string;
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  mobile_phone: string;
+  interestProgram: mongoose.Types.ObjectId;
+  status: 'active' | 'inactive';
+  trackings: { tracking: mongoose.Types.ObjectId, description: string }[];
 }
 
 const LeadSchema = new Schema({
   incremental:{
     //numero unico de 4 digitos 
     type: Schema.Types.Number,
+    required: true,
+    unique: true,
+    min: 1000,
+    max: 9999
   },
   full_name: {type: Schema.Types.String},
-  first_name: {type: Schema.Types.String},
-  last_name: {type: Schema.Types.String},
-  email: {type: Schema.Types.String},
-  mobile_phone: {type: Schema.Types.String},
-  interestProgram: {type: Schema.Types.ObjectId, ref: 'Program'},
+  first_name: {type: Schema.Types.String, required: true, trim: true},
+  last_name: {type: Schema.Types.String, required: true, trim: true},
+  email: {type: Schema.Types.String, required: true, trim: true, lowercase: true},
+  mobile_phone: {type: Schema.Types.String, required: true, trim: true},
+  interestProgram: {type: Schema.Types.ObjectId, ref: 'Program', required: true},
   status:{
     type: Schema.Types.String,
     enum: ['active', 'inactive'],
