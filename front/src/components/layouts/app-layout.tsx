@@ -101,7 +101,7 @@ export function AppLayout(props: AppLayoutProps) {
               </header>
               <div className="block p-1 md:p-0 absolute top-6 md:top-10 left-1/2 transform -translate-x-1/2 w-full md:min-h-screen-lg md:max-w-screen-xl m-auto">
                 <div className='relative'>
-                  <div className="h-[88vh] lg:h-[94vh] overflow-y-auto overflow-x-hidden w-full rounded-md p-1 pb-0 md:p-4">
+                  <div className="h-[88vh] lg:h-[94vh] overflow-y-auto overflow-x-hidden scrollbar-hidden w-full rounded-md p-1 pb-0 md:p-4">
                     {children}
                   </div>
                 </div>
