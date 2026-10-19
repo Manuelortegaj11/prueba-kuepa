@@ -1,16 +1,23 @@
 // @import_dependencies
+import mongoose from 'mongoose'
 
 // @import_services
 
 // @import_models
-import { Lead, Campaign, Third, Adnetwork, Tracking, Message, Interaction } from "@app/models"
+import { Lead, Campaign, Third, Adnetwork, Tracking, Message, Interaction, Program } from "@app/models"
+import { INCREMENTAL_RANGE } from "@app/models/leadModel"
 
 // @import_utilities
 import { responseUtility } from "@core/utilities/responseUtility"
+import { paginationUtility } from "@core/utilities/paginationUtility"
 import moment from "moment";
 
 // @import_types
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const MOBILE_PHONE_PATTERN = /^3\d{9}$/
+const INCREMENTAL_ATTEMPTS = 5
+const ACCENT_GROUPS = ['aá', 'eé', 'ií', 'oó', 'uúü', 'nñ']
 
 class LeadService {
   
@@ -19,42 +26,44 @@ class LeadService {
   
   public async upsert (_params) {
     try{ 
-      if(_params.user){
-        const third = await Third.findOne({user: _params.user}).lean()
-        if(!third) return responseUtility.error('third.not_found1');
-        _params.adviser = third._id
+      if(_params._id && !mongoose.isObjectIdOrHexString(_params._id)) return responseUtility.error('lead.not_found')
+      
+      const first_name = this.cleanText(_params.first_name)
+      const last_name = this.cleanText(_params.last_name)
+      
+      const lead_data = {
+        first_name,
+        last_name,
+        full_name: `${first_name} ${last_name}`,
+        email: this.cleanText(_params.email).toLowerCase(),
+        mobile_phone: this.cleanText(_params.mobile_phone),
+        interestProgram: _params.interestProgram
       }
       
-      if(_params.third){
-        const third = await Third.findOne({_id: _params.third}).lean()
-        if(!third) return responseUtility.error('third.not_found2');
-        _params.adviser = third._id
-      }
+      const fields = this.invalidFields(lead_data)
+      if(fields.length) return responseUtility.error('lead.invalid_data', null, { fields })
       
-      let last_tracking = _params?.trackings?.[_params?.trackings?.length - 1]
-      if(last_tracking?.new){
-        const tracking = await Tracking.findOne({_id: last_tracking.tracking}).lean()
-        if(tracking?.target_status){
-          _params.status = tracking.target_status
-        }
-        if(!last_tracking.has_next_date && _params.status !== 'sold'){
-          _params.status = 'dropped'
-        }
-      }
+      const program = await Program.findOne({_id: lead_data.interestProgram}).lean()
+      if(!program) return responseUtility.error('program.not_found')
+      
+      const where:any = { email: lead_data.email }
+      if(_params._id) where._id = { $ne: _params._id }
+      const duplicated = await Lead.findOne(where).lean()
+      if(duplicated) return responseUtility.error('lead.duplicated_email')
       
       if(_params._id){
         const exists = await Lead.findOne({_id: _params._id}).lean()
         if(!exists) return responseUtility.error('lead.not_found');
         
-        const lead = await Lead.findOneAndUpdate({_id: _params._id}, {$set: _params}, {new:true, lean:true})
+        const lead = await Lead.findOneAndUpdate({_id: _params._id}, {$set: lead_data}, {new:true, lean:true})
         
         
         return responseUtility.success({
           object: lead
         })
       } else {
-        const create = await Lead.create(_params)
-        const lead = create.toObject()
+        const lead = await this.createWithIncremental(lead_data)
+        if(!lead) return responseUtility.error('lead.incremental_exhausted')
         
         
         return responseUtility.success({
@@ -251,33 +260,27 @@ class LeadService {
   
   public async list (_params) {
     try{
-      const where:any = {}
+      const pagination = paginationUtility.parse(_params)
+      if(pagination.fields.length) return responseUtility.error('pagination.invalid_params', null, { fields: pagination.fields })
       
-      let third
-      
-      if(_params.user){
-        third = await Third.findOne({user: _params.user}).lean()
-        if(third) where.adviser = third._id.toString()
-      }
-      
-      
-      let leads = await Lead.find(where)
-      .sort({created_at:-1})
-      .populate({
-        path: 'contact',
-        select: 'first_name last_name document number',
-        options: { lean:true }
-      })
-      .limit(100)
-      .lean()
-      
-      leads = leads.map(_l=>{
-        _l.full_name = `${_l.contact?.first_name} ${_l.contact?.last_name}`.trim()
-        return _l
-      })
+      const where = this.searchFilter(_params.search)
+      const [leads, total] = await Promise.all([
+        Lead.find(where)
+        .sort({created_at:-1, _id:-1})
+        .skip(pagination.skip)
+        .limit(pagination.pageSize)
+        .populate({
+          path: 'interestProgram',
+          select: 'name',
+          options: { lean:true }
+        })
+        .lean(),
+        Lead.countDocuments(where)
+      ])
       
       return responseUtility.success({
-        list:leads
+        list: leads,
+        pagination: paginationUtility.meta(pagination.page, pagination.pageSize, total)
       })
     } catch (error) {
       console.log('error', error)
@@ -298,8 +301,8 @@ class LeadService {
     try{
       const lead = await Lead.findOne({_id: _params._id})
       .populate({
-        path: 'contact',
-        select: 'first_name last_name incremental document number',
+        path: 'interestProgram',
+        select: 'name',
         options: { lean:true }
       })
       .lean()
@@ -311,7 +314,7 @@ class LeadService {
         select: 'inbound from to content created_at',
         options: { lean:true }
       })
-      .sort({crated_at:-1})
+      .sort({created_at:-1})
       .lean()
       return responseUtility.success({
         lead,
@@ -321,6 +324,61 @@ class LeadService {
     } catch (error) {
       console.log('error', error)
     }
+  }
+  
+  private invalidFields (lead_data) {
+    const fields: string[] = []
+    if(!lead_data.first_name) fields.push('first_name')
+    if(!lead_data.last_name) fields.push('last_name')
+    if(!EMAIL_PATTERN.test(lead_data.email)) fields.push('email')
+    if(!MOBILE_PHONE_PATTERN.test(lead_data.mobile_phone)) fields.push('mobile_phone')
+    if(!mongoose.isObjectIdOrHexString(lead_data.interestProgram)) fields.push('interestProgram')
+    return fields
+  }
+  
+  private cleanText (value) {
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  
+  private async createWithIncremental (lead_data, attempt = 1) {
+    const incremental = await this.nextIncremental()
+    if(incremental > INCREMENTAL_RANGE.max) return null
+    
+    try{
+      const lead = await Lead.create({...lead_data, incremental})
+      return lead.toObject()
+    } catch (error) {
+      const incremental_taken = error?.code === 11000 && error?.keyPattern?.incremental
+      if(!incremental_taken || attempt >= INCREMENTAL_ATTEMPTS) throw error
+      return this.createWithIncremental(lead_data, attempt + 1)
+    }
+  }
+  
+  private async nextIncremental () {
+    const last = await Lead.findOneWithDeleted({})
+    .sort({incremental:-1})
+    .select('incremental')
+    .lean()
+    return last ? last.incremental + 1 : INCREMENTAL_RANGE.min
+  }
+  
+  private searchFilter (search) {
+    const term = this.cleanText(search)
+    if(!term) return {}
+    
+    const pattern = this.searchPattern(term)
+    const filters: any[] = [{full_name: pattern}, {email: pattern}, {mobile_phone: pattern}]
+    if(/^\d+$/.test(term)) filters.push({incremental: Number(term)})
+    return { $or: filters }
+  }
+  
+  private searchPattern (term: string) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const accent_insensitive = ACCENT_GROUPS.reduce(
+      (pattern, group) => pattern.replace(new RegExp(`[${group}]`, 'gi'), `[${group}]`),
+      escaped
+    )
+    return new RegExp(accent_insensitive, 'i')
   }
 }
 

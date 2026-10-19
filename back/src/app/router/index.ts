@@ -2,6 +2,8 @@
 import { Application } from 'express'
 
 // @import_routes
+import { LeadRoute } from '@app/domains/lead/leadRoute'
+import { ProgramRoute } from '@app/domains/program/programRoute'
 import { RoleRoute } from '@app/domains/role/roleRoute'
 import { PermissionRoute } from '@app/domains/permission/permissionRoute'
 import { GlobalRoute } from '@app/domains/global/globalRoute'
@@ -15,6 +17,8 @@ class Routes {
   private prefix: string = '/api'
   
   // @declare_routes
+  private leadRoute: LeadRoute
+  private programRoute: ProgramRoute
   
   private roleRoute: RoleRoute
   private permissionRoute: PermissionRoute
@@ -26,6 +30,8 @@ class Routes {
   constructor(app: Application) {
     this.app = app
     // @assign_routes
+    this.leadRoute = new LeadRoute(this.app, this.prefix)
+    this.programRoute = new ProgramRoute(this.app, this.prefix)
     this.roleRoute = new RoleRoute(this.app, this.prefix)
     this.permissionRoute = new PermissionRoute(this.app, this.prefix)
     this.thirdRoute = new ThirdRoute(this.app, this.prefix)
@@ -38,6 +44,8 @@ class Routes {
   public init() {
     try{
       // @init_routes
+      this.leadRoute.init()
+      this.programRoute.init()
       this.roleRoute.init()
       this.permissionRoute.init()
       this.thirdRoute.init()
