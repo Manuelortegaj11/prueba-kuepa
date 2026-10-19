@@ -2,6 +2,14 @@ export const price = (value:number) => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value)
 }
 
+export const formatPhone = (value:string) => {
+  return value?.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1 $2 $3')
+}
+
+export const formatDateTime = (value:string) => {
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
 export function encodeBase64UrlSafe(data:string) {
   // Codifica en Base64 estándar
   const base64 = btoa(data);

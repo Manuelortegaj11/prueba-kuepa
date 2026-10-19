@@ -1,4 +1,5 @@
 // @import_models
+import { ProgramModel } from '@app/models/programModel'
 
 import { RoleModel } from '@app/models/roleModel'
 import { PermissionModel } from '@app/models/permissionModel'
@@ -14,6 +15,7 @@ import { InteractionModel } from '@app/models/interactionModel'
 
 // @export_models
 export {
+  ProgramModel as Program,
   RoleModel as Role,
   PermissionModel as Permission,
   LeadModel as Lead,

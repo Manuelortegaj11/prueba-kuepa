@@ -38,6 +38,14 @@
   font-weight: semibold;
 }
 
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   margin: 0;
   display: flex;
